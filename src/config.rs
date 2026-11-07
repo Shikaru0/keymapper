@@ -36,7 +36,7 @@ impl Config {
 }
 
 const DEFAULT_CONFIG: &str = "\
-# configuration for keymapper
+# Configuration for keymapper.
 
 # Path to the evdev input device (e.g., /dev/input/event0).
 input_device = \"/dev/input/event0\"
