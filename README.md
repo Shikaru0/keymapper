@@ -31,15 +31,23 @@ keymapper remap /dev/input/event0   # start with an explicit device
 Auto-generated at `~/.config/keymapper/config.toml` on first run:
 
 ```toml
+# Configuration for keymapper.
+
+# Path to the evdev input device (e.g., /dev/input/event0).
 input_device = "/dev/input/event0"
+
+# Remap table for keymapper.
+[[remap]]
+from = "KEY_A"
+to = "KEY_B"
 
 [[remap]]
 from = "KEY_CAPSLOCK"
-to   = "KEY_ESC"
+to = "KEY_ESC"
 
 [[remap]]
 from = "KEY_F1"
-to   = ["KEY_LEFTCTRL", "KEY_T"]
+to = ["KEY_LEFTCTRL", "KEY_T"]
 ```
 
 `to` can be a single key name or a list of key names for combo triggers. Key names are the `KEY_*` constants from `/usr/include/linux/input-event-codes.h`.
