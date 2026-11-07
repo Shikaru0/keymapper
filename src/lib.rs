@@ -1,5 +1,12 @@
 pub mod config;
 
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+};
+
+use notify::Watcher;
+
 /// Package version, defined in Cargo.toml, is embedded into the binary at compile time using the `env!` macro.
 /// This allows the program to access its own version information at runtime.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -49,10 +56,45 @@ pub fn monitor_device(path: &str) {
     }
 }
 
+fn spawn_config_watcher(remap: Arc<Mutex<Vec<(evdev::KeyCode, evdev::KeyCode)>>>) {
+    let path = config::config_path();
+    let parent = path.parent().expect("Failed to get config directory");
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = notify::recommended_watcher(tx).expect("Failed to create file watcher");
+    watcher
+        .watch(parent, notify::RecursiveMode::NonRecursive)
+        .expect("Failed to watch config directory");
+
+    thread::spawn(move || {
+        let _watcher = watcher; // Keep the watcher alive in this thread
+
+        for res in rx.iter() {
+            match res {
+                Ok(event) => {
+                    if event.paths.contains(&path) {
+                        println!("Configuration file changed, reloading...");
+                        let config = config::try_load_config();
+                        if let Some(cfg) = config {
+                            let new_remap = cfg.remap_table();
+                            let mut remap_lock = remap.lock().unwrap();
+                            *remap_lock = new_remap;
+                            println!("Remap table updated.");
+                        } else {
+                            eprintln!("Failed to reload configuration.");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("Watch error: {:?}", e),
+            }
+        }
+    });
+}
+
 /// Remaps keys on a specific evdev input device.
 pub fn run_remap(path: Option<&str>) {
     let config = config::load_config();
-    let remap = config.remap_table();
+    let remap_vec = config.remap_table();
     let path = match path {
         Some(p) => p.to_owned(),
         None => config.input_device.clone(),
@@ -75,7 +117,7 @@ pub fn run_remap(path: Option<&str>) {
         Some(supported) => supported.iter().collect(),
         None => evdev::AttributeSet::new(),
     };
-    for (_, target) in &remap {
+    for (_, target) in &remap_vec {
         keys.insert(*target);
     }
 
@@ -93,6 +135,9 @@ pub fn run_remap(path: Option<&str>) {
         }
     };
 
+    let remap = Arc::new(Mutex::new(remap_vec));
+    spawn_config_watcher(Arc::clone(&remap));
+
     loop {
         let events = match device.fetch_events() {
             Ok(events) => events,
@@ -101,10 +146,11 @@ pub fn run_remap(path: Option<&str>) {
                 std::process::exit(1);
             }
         };
+        let remap_snapshot = remap.lock().unwrap().clone();
         let mut out: Vec<evdev::InputEvent> = Vec::new();
         for event in events {
             let event = if let evdev::EventSummary::Key(_, keycode, value) = event.destructure() {
-                let remapped = remap
+                let remapped = remap_snapshot
                     .iter()
                     .find(|(src, _)| *src == keycode)
                     .map(|(_, dst)| *dst)

@@ -71,6 +71,17 @@ pub fn load_config() -> Config {
     toml::from_str(&config_content).expect("Failed to parse config file")
 }
 
+/// Tries to load the configuration from the configuration file. Returns `None` if the file does not exist or cannot be read.
+pub fn try_load_config() -> Option<Config> {
+    let path = config_path();
+    if !path.exists() {
+        return None;
+    }
+
+    let config_content = std::fs::read_to_string(&path).ok()?;
+    toml::from_str(&config_content).ok()
+}
+
 /// Loads the remap table from the configuration file.
 pub fn load_remap_table() -> Vec<(evdev::KeyCode, evdev::KeyCode)> {
     let config = load_config();
