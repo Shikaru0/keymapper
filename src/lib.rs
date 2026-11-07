@@ -19,3 +19,30 @@ pub fn list_devices() {
         );
     }
 }
+
+/// Monitors a specific evdev input device for key events.
+pub fn monitor_device(path: &str) {
+    let mut device = evdev::Device::open(path).expect("Failed to open device");
+    println!("Monitoring device: {}", device.name().unwrap_or("Unknown"));
+
+    loop {
+        let events = match device.fetch_events() {
+            Ok(events) => events,
+            Err(e) => {
+                eprintln!("Error fetching events: {}", e);
+                std::process::exit(1);
+            }
+        };
+        for event in events {
+            if let evdev::EventSummary::Key(_, keycode, value) = event.destructure() {
+                let state = match value {
+                    0 => "released",
+                    1 => "pressed",
+                    2 => "held",
+                    _ => "unknown",
+                };
+                println!("Key {:?} was {}", keycode, state);
+            }
+        }
+    }
+}

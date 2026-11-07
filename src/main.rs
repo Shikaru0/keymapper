@@ -10,6 +10,11 @@ struct Args {
 enum Commands {
     /// Lists all available evdev input devices.
     ListDevices,
+    /// Monitors a specific evdev input device for key events.
+    Monitor {
+        /// Path to the evdev input device (e.g., /dev/input/event0).
+        device: String,
+    },
     /// Prints the version of the keymapper package.
     PrintVersion,
 }
@@ -19,6 +24,7 @@ fn main() {
 
     match args.command {
         Some(Commands::ListDevices) => keymapper::list_devices(),
+        Some(Commands::Monitor { device }) => keymapper::monitor_device(&device),
         Some(Commands::PrintVersion) => keymapper::print_version(),
         None => keymapper::print_version(),
     }
