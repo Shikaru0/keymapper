@@ -5,8 +5,18 @@ use std::{path::PathBuf, str::FromStr};
 pub struct RemapEntry {
     /// The source key code to be remapped.
     pub from: String,
-    /// The target key code to which the source key code will be remapped.
-    pub to: String,
+    /// The target of the remap entry.
+    pub to: RemapTarget,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
+#[serde(untagged)]
+/// Represents the target of a remap entry, which can be either a single key name or a sequence of key names.
+pub enum RemapTarget {
+    /// A single key name to which the source key will be remapped.
+    Single(String),
+    /// A sequence of key names to which the source key will be remapped.
+    Sequence(Vec<String>),
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
@@ -19,17 +29,22 @@ pub struct Config {
 }
 
 impl Config {
-    /// Returns the remap table as a vector of tuples containing the source and target key codes.
-    pub fn remap_table(&self) -> Vec<(evdev::KeyCode, evdev::KeyCode)> {
+    /// Returns the remap table as a vector of tuples, where each tuple contains a source key code and a vector of target key codes.
+    pub fn remap_table(&self) -> Vec<(evdev::KeyCode, Vec<evdev::KeyCode>)> {
         self.remap
             .iter()
             .filter_map(|entry| {
-                let from_key = evdev::KeyCode::from_str(&entry.from);
-                let to_key = evdev::KeyCode::from_str(&entry.to);
-                match (from_key, to_key) {
-                    (Ok(from), Ok(to)) => Some((from, to)),
-                    _ => None,
-                }
+                let from_key = evdev::KeyCode::from_str(&entry.from).ok()?;
+
+                let targets: Vec<evdev::KeyCode> = match &entry.to {
+                    RemapTarget::Single(s) => vec![evdev::KeyCode::from_str(s).ok()?],
+                    RemapTarget::Sequence(seq) => seq
+                        .iter()
+                        .map(|s| evdev::KeyCode::from_str(s))
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()?,
+                };
+                Some((from_key, targets))
             })
             .collect()
     }
@@ -49,6 +64,10 @@ to = \"KEY_B\"
 [[remap]]
 from = \"KEY_CAPSLOCK\"
 to = \"KEY_ESC\"
+
+[[remap]]
+from = \"KEY_F1\"
+to = [\"KEY_LEFTCTRL\", \"KEY_T\"]
 ";
 
 /// Returns the path to the configuration file.
@@ -83,7 +102,7 @@ pub fn try_load_config() -> Option<Config> {
 }
 
 /// Loads the remap table from the configuration file.
-pub fn load_remap_table() -> Vec<(evdev::KeyCode, evdev::KeyCode)> {
+pub fn load_remap_table() -> Vec<(evdev::KeyCode, Vec<evdev::KeyCode>)> {
     let config = load_config();
     config.remap_table()
 }

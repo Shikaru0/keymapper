@@ -7,6 +7,9 @@ use std::{
 
 use notify::Watcher;
 
+/// Type alias for the remap table, which is a vector of tuples containing the source key and the target key.
+type RemapTable = Vec<(evdev::KeyCode, Vec<evdev::KeyCode>)>;
+
 /// Package version, defined in Cargo.toml, is embedded into the binary at compile time using the `env!` macro.
 /// This allows the program to access its own version information at runtime.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -56,7 +59,7 @@ pub fn monitor_device(path: &str) {
     }
 }
 
-fn spawn_config_watcher(remap: Arc<Mutex<Vec<(evdev::KeyCode, evdev::KeyCode)>>>) {
+fn spawn_config_watcher(remap: Arc<Mutex<RemapTable>>) {
     let path = config::config_path();
     let parent = path.parent().expect("Failed to get config directory");
 
@@ -117,8 +120,10 @@ pub fn run_remap(path: Option<&str>) {
         Some(supported) => supported.iter().collect(),
         None => evdev::AttributeSet::new(),
     };
-    for (_, target) in &remap_vec {
-        keys.insert(*target);
+    for (_, targets) in &remap_vec {
+        for target in targets {
+            keys.insert(*target);
+        }
     }
 
     let mut virtual_device = match evdev::uinput::VirtualDevice::builder()
@@ -149,17 +154,34 @@ pub fn run_remap(path: Option<&str>) {
         let remap_snapshot = remap.lock().unwrap().clone();
         let mut out: Vec<evdev::InputEvent> = Vec::new();
         for event in events {
-            let event = if let evdev::EventSummary::Key(_, keycode, value) = event.destructure() {
-                let remapped = remap_snapshot
-                    .iter()
-                    .find(|(src, _)| *src == keycode)
-                    .map(|(_, dst)| *dst)
-                    .unwrap_or(keycode);
-                evdev::InputEvent::new(evdev::EventType::KEY.0, remapped.code(), value)
+            if let evdev::EventSummary::Key(_, keycode, value) = event.destructure()
+                && let Some((_, targets)) = remap_snapshot.iter().find(|(src, _)| *src == keycode)
+            {
+                if targets.len() == 1 {
+                    out.push(evdev::InputEvent::new(
+                        evdev::EventType::KEY.0,
+                        targets[0].code(),
+                        value,
+                    ));
+                } else if value == 1 {
+                    for target in targets {
+                        out.push(evdev::InputEvent::new(
+                            evdev::EventType::KEY.0,
+                            target.code(),
+                            1,
+                        ));
+                    }
+                    for target in targets.iter().rev() {
+                        out.push(evdev::InputEvent::new(
+                            evdev::EventType::KEY.0,
+                            target.code(),
+                            0,
+                        ));
+                    }
+                }
             } else {
-                event
-            };
-            out.push(event);
+                out.push(event);
+            }
         }
         if !out.is_empty()
             && let Err(e) = virtual_device.emit(&out)
