@@ -1,3 +1,5 @@
+use keymapper::print_version;
+
 fn main() {
-    println!("Hello, world!");
+    print_version();
 }
