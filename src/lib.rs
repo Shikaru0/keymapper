@@ -46,3 +46,77 @@ pub fn monitor_device(path: &str) {
         }
     }
 }
+
+/// Defines a simple remapping table for demonstration purposes.
+pub fn remap_table() -> Vec<(evdev::KeyCode, evdev::KeyCode)> {
+    vec![(evdev::KeyCode::KEY_A, evdev::KeyCode::KEY_B)]
+}
+
+/// Remaps keys on a specific evdev input device.
+pub fn run_remap(path: &str) {
+    let mut device = match evdev::Device::open(path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("Failed to open device {}: {}", path, e);
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = device.grab() {
+        eprintln!("Failed to grab device {}: {}", path, e);
+        std::process::exit(1);
+    }
+
+    let mut keys: evdev::AttributeSet<evdev::KeyCode> = match device.supported_keys() {
+        Some(supported) => supported.iter().collect(),
+        None => evdev::AttributeSet::new(),
+    };
+    for (_, target) in remap_table() {
+        keys.insert(target);
+    }
+
+    let mut virtual_device = match evdev::uinput::VirtualDevice::builder()
+        .expect("Failed to create virtual device builder")
+        .name("keymapper-virtual-device")
+        .with_keys(&keys)
+        .expect("Failed to set virtual device keys")
+        .build()
+    {
+        Ok(vd) => vd,
+        Err(e) => {
+            eprintln!("Failed to create virtual device: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let remap = remap_table();
+
+    loop {
+        let events = match device.fetch_events() {
+            Ok(events) => events,
+            Err(e) => {
+                eprintln!("Error fetching events: {}", e);
+                std::process::exit(1);
+            }
+        };
+        let mut out: Vec<evdev::InputEvent> = Vec::new();
+        for event in events {
+            let event = if let evdev::EventSummary::Key(_, keycode, value) = event.destructure() {
+                let remapped = remap
+                    .iter()
+                    .find(|(src, _)| *src == keycode)
+                    .map(|(_, dst)| *dst)
+                    .unwrap_or(keycode);
+                evdev::InputEvent::new(evdev::EventType::KEY.0, remapped.code(), value)
+            } else {
+                event
+            };
+            out.push(event);
+        }
+        if !out.is_empty()
+            && let Err(e) = virtual_device.emit(&out)
+        {
+            eprintln!("Error emitting events: {}", e);
+        }
+    }
+}

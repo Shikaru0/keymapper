@@ -15,6 +15,11 @@ enum Commands {
         /// Path to the evdev input device (e.g., /dev/input/event0).
         device: String,
     },
+    /// Remaps keys on a specific evdev input device.
+    Remap {
+        /// Path to the evdev input device (e.g., /dev/input/event0).
+        device: String,
+    },
     /// Prints the version of the keymapper package.
     PrintVersion,
 }
@@ -25,6 +30,7 @@ fn main() {
     match args.command {
         Some(Commands::ListDevices) => keymapper::list_devices(),
         Some(Commands::Monitor { device }) => keymapper::monitor_device(&device),
+        Some(Commands::Remap { device }) => keymapper::run_remap(&device),
         Some(Commands::PrintVersion) => keymapper::print_version(),
         None => keymapper::print_version(),
     }
