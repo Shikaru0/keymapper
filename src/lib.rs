@@ -1,3 +1,5 @@
+pub mod config;
+
 /// Package version, defined in Cargo.toml, is embedded into the binary at compile time using the `env!` macro.
 /// This allows the program to access its own version information at runtime.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -47,14 +49,16 @@ pub fn monitor_device(path: &str) {
     }
 }
 
-/// Defines a simple remapping table for demonstration purposes.
-pub fn remap_table() -> Vec<(evdev::KeyCode, evdev::KeyCode)> {
-    vec![(evdev::KeyCode::KEY_A, evdev::KeyCode::KEY_B)]
-}
-
 /// Remaps keys on a specific evdev input device.
-pub fn run_remap(path: &str) {
-    let mut device = match evdev::Device::open(path) {
+pub fn run_remap(path: Option<&str>) {
+    let config = config::load_config();
+    let remap = config.remap_table();
+    let path = match path {
+        Some(p) => p.to_owned(),
+        None => config.input_device.clone(),
+    };
+
+    let mut device = match evdev::Device::open(&path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Failed to open device {}: {}", path, e);
@@ -71,8 +75,8 @@ pub fn run_remap(path: &str) {
         Some(supported) => supported.iter().collect(),
         None => evdev::AttributeSet::new(),
     };
-    for (_, target) in remap_table() {
-        keys.insert(target);
+    for (_, target) in &remap {
+        keys.insert(*target);
     }
 
     let mut virtual_device = match evdev::uinput::VirtualDevice::builder()
@@ -88,8 +92,6 @@ pub fn run_remap(path: &str) {
             std::process::exit(1);
         }
     };
-
-    let remap = remap_table();
 
     loop {
         let events = match device.fetch_events() {
