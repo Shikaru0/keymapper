@@ -73,22 +73,30 @@ fn spawn_config_watcher(remap: Arc<Mutex<RemapTable>>) {
         let _watcher = watcher; // Keep the watcher alive in this thread
 
         for res in rx.iter() {
-            match res {
-                Ok(event) => {
-                    if event.paths.contains(&path) {
-                        println!("Configuration file changed, reloading...");
-                        let config = config::try_load_config();
-                        if let Some(cfg) = config {
-                            let new_remap = cfg.remap_table();
-                            let mut remap_lock = remap.lock().unwrap();
-                            *remap_lock = new_remap;
-                            println!("Remap table updated.");
-                        } else {
-                            eprintln!("Failed to reload configuration.");
-                        }
-                    }
-                }
-                Err(e) => eprintln!("Watch error: {:?}", e),
+            let Ok(event) = res else {
+                continue;
+            };
+
+            if matches!(event.kind, notify::EventKind::Access(_)) {
+                continue;
+            }
+
+            if !event.paths.contains(&path) {
+                continue;
+            }
+
+            thread::sleep(std::time::Duration::from_millis(50));
+            while rx.try_recv().is_ok() {}
+
+            println!("Configuration file changed, reloading...");
+            let config = config::try_load_config();
+            if let Some(cfg) = config {
+                let new_remap = cfg.remap_table();
+                let mut remap_lock = remap.lock().unwrap();
+                *remap_lock = new_remap;
+                println!("Configuration reloaded successfully.");
+            } else {
+                eprintln!("Failed to reload configuration.");
             }
         }
     });
