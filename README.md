@@ -36,9 +36,13 @@ input_device = "/dev/input/event0"
 [[remap]]
 from = "KEY_CAPSLOCK"
 to   = "KEY_ESC"
+
+[[remap]]
+from = "KEY_F1"
+to   = ["KEY_LEFTCTRL", "KEY_T"]
 ```
 
-Key names are the `KEY_*` constants from `/usr/include/linux/input-event-codes.h`.
+`to` can be a single key name or a list of key names for combo triggers. Key names are the `KEY_*` constants from `/usr/include/linux/input-event-codes.h`.
 
 Editing config.toml while the daemon runs hot-swaps the remap table, so no restart is needed.
 
